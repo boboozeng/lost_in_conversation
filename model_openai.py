@@ -1,5 +1,5 @@
 from openai import OpenAI, AzureOpenAI
-import os, time, json, re
+import os, time, json, re, warnings
 
 def format_messages(messages, variables={}):
     last_user_msg = [msg for msg in messages if msg["role"] == "user"][-1]
@@ -61,8 +61,32 @@ class OpenAI_Model:
             inp_token_cost, out_token_cost = 0.075, 0.150
         elif base_model.startswith("o1-preview") or base_model == "o1":
             inp_token_cost, out_token_cost = 0.015, 0.06
+        ### Add new model pricing
+        ### GPT Series
+        elif base_model.startswith("gpt-5.5"):
+            inp_token_cost, out_token_cost = 0.0015, 0.012
+        elif base_model.startswith("gpt-5.4-mini"):
+            inp_token_cost, out_token_cost = 0.000225, 0.00135
+        elif base_model.startswith("gpt-5.4"):
+            inp_token_cost, out_token_cost = 0.00075, 0.0045
+        elif base_model.startswith("gpt-5.2"):
+            inp_token_cost, out_token_cost = 0.000525, 0.00420
+        ### GLM Series
+        elif base_model.startswith("glm-5.1"):
+            inp_token_cost, out_token_cost = 0.006, 0.024
+        ### DeepSeek Series
+        elif base_model.startswith("deepseek"):
+            inp_token_cost, out_token_cost = 0.003, 0.006
+        ### LLaMA Series
+        elif base_model.startswith("llama"):
+            inp_token_cost, out_token_cost = 0, 0
+        ### Qwen Series
+        elif base_model.startswith("qwen"):
+            inp_token_cost, out_token_cost = 0, 0
+        ### Unknown models - use gpt-4o pricing as default, but print a warning
         else:
-            raise Exception(f"Model {model} pricing unknown, please add")
+            warnings.warn(f"[cost] Model {model} pricing unknown, using default (gpt-4o pricing)", RuntimeWarning)
+            inp_token_cost, out_token_cost = 0.0025, 0.01
 
         cache_discount = 0.5 # cached tokens are half the price
         batch_discount = 0.5 # batch API is half the price
