@@ -1,5 +1,6 @@
 from openai import OpenAI, AzureOpenAI
 import os, time, json, re, warnings
+from model_router import ModelRouter
 
 def format_messages(messages, variables={}):
     last_user_msg = [msg for msg in messages if msg["role"] == "user"][-1]
@@ -20,14 +21,7 @@ def format_messages(messages, variables={}):
 
 class OpenAI_Model:
     def __init__(self):
-        if "AZURE_OPENAI_API_KEY" in os.environ and "AZURE_OPENAI_ENDPOINT" in os.environ:
-            self.client = AzureOpenAI(api_key=os.environ["AZURE_OPENAI_API_KEY"], azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"], api_version="2024-10-01-preview")
-        else:
-            assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY environment variable is not set"
-            kwargs = {"api_key": os.environ["OPENAI_API_KEY"]}
-            if "OPENAI_BASE_URL" in os.environ:
-                kwargs["base_url"] = os.environ["OPENAI_BASE_URL"]
-            self.client = OpenAI(**kwargs)
+        self.router = ModelRouter()
 
     def cost_calculator(self, model, usage, is_batch_model=False):
         is_finetuned, base_model = False, model
@@ -96,35 +90,42 @@ class OpenAI_Model:
 
         return total_usd
 
-    def generate(self, messages, model="gpt-4o-mini", timeout=30, max_retries=3, temperature=1.0, is_json=False, return_metadata=False, max_tokens=None, variables={}):
+    def generate(self, messages, model="gpt-4o-mini", timeout=30, max_retries=3, temperature=1.0, is_json=False, return_metadata=False, max_tokens=None, variables={}, extra_body=None):
         kwargs = {}
         if is_json:
             kwargs["response_format"] = { "type": "json_object" }
+        if extra_body is not None:
+            kwargs["extra_body"] = extra_body
         N = 0
 
         messages = format_messages(messages, variables)
 
+        ### Get the appropriate client for the model using the router
+        requested_model = model
+        routed_model, client = self.router.get_client(requested_model)
+
         # o1- models do not support system message. If the first message is a system message, and the second message is a user message, then prepend the user message with the system message.
-        if model.startswith("o1") and len(messages) > 1 and messages[0]["role"] == "system" and messages[1]["role"] == "user":
+        if routed_model.startswith("o1") and len(messages) > 1 and messages[0]["role"] == "system" and messages[1]["role"] == "user":
             system_message = messages[0]["content"]
             messages[1]["content"] = f"System Message: {system_message}\n{messages[1]['content']}"
             messages = messages[1:]
 
         while True:
             try:
-                response = self.client.chat.completions.create(model=model, messages=messages, timeout=timeout, max_completion_tokens=max_tokens, temperature=temperature, **kwargs)
+                response = client.chat.completions.create(model=routed_model, messages=messages, timeout=timeout, max_completion_tokens=max_tokens, temperature=temperature, **kwargs)
                 break
-            except:
+            except Exception as e:
                 N += 1
+                print(f"[retry] requested_model={requested_model}, routed_model={routed_model}, attempt={N}/{max_retries}, error={type(e).__name__}: {e}")
                 if N >= max_retries:
-                    raise Exception("Failed to get response from OpenAI")
+                    raise RuntimeError(f"Failed to get response via routed model {routed_model} after {max_retries} attempts") from e
                 else:
-                    time.sleep(4)
+                    time.sleep(min(2 ** N, 30))
 
         response = response.to_dict()
         usage = response['usage']
         response_text = response["choices"][0]["message"]["content"]
-        total_usd = self.cost_calculator(model, usage)
+        total_usd = self.cost_calculator(routed_model, usage)
         prompt_tokens_cached = 0
         if 'prompt_tokens_details' in usage:
             prompt_tokens_cached = usage['prompt_tokens_details']['cached_tokens']

@@ -1,0 +1,39 @@
+{
+    "aliases": {
+        "glm": "glm-5.1",
+        "gpt": "gpt-5.2",
+        "qwen": "qwen3.5-flash",
+        "deepseek": "deepseek-v4-flash"
+    },
+    "default": {
+        "client_type": "openai",
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url": null
+    },
+    "routes": [
+        {
+            "match_prefix": ["gpt-", "o1-", "o3-"],
+            "client_type": "openai",
+            "api_key_env": "OPENAI_API_KEY",
+            "base_url": "https://opentoken.lol/v1"
+        },
+        {
+            "match_prefix": ["glm-"],
+            "client_type": "openai",
+            "api_key_env": "ZHIPU_API_KEY",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4"
+        },
+        {
+            "match_prefix": ["qwen3.5-", "deepseek-"],
+            "client_type": "openai",
+            "api_key_env": "ALI_API_KEY",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        },
+        {
+            "match_prefix": ["local-"],
+            "client_type": "openai",
+            "api_key_env": "LOCAL_API_KEY",
+            "base_url": "http://127.0.0.1:8000/v1"
+        }
+    ]
+}
